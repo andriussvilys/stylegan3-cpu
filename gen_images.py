@@ -17,6 +17,8 @@ import dnnlib
 import numpy as np
 import PIL.Image
 import torch
+import time
+from math import ceil
 
 import legacy
 
@@ -76,6 +78,8 @@ def make_transform(translate: Tuple[float,float], angle: float):
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 @click.option('--translate', help='Translate XY-coordinate (e.g. \'0.3,1\')', type=parse_vec2, default='0,0', show_default=True, metavar='VEC2')
 @click.option('--rotate', help='Rotation angle in degrees', type=float, default=0, show_default=True, metavar='ANGLE')
+@click.option('--scale', 'scale', help='Scale of image', type=float, default=1, show_default=True)
+@click.option('--cols', 'cols', help='Number of colums', type=float, default=10, show_default=True)
 @click.option('--outdir', help='Where to save the output images', type=str, required=True, metavar='DIR')
 def generate_images(
     network_pkl: str,
@@ -85,7 +89,9 @@ def generate_images(
     outdir: str,
     translate: Tuple[float,float],
     rotate: float,
-    class_idx: Optional[int]
+    class_idx: Optional[int],
+    cols: float,
+    scale: float
 ):
     """Generate images using pretrained network pickle.
 
@@ -103,9 +109,17 @@ def generate_images(
     """
 
     print('Loading networks from "%s"...' % network_pkl)
-    device = torch.device('cuda')
+    cuda_avail = torch.cuda.is_available()
+    if cuda_avail:
+        print('cuda is available.')
+        device = torch.device('cuda')
+    else:
+        print('cuda is not available.')
+        device = torch.device('cpu')
+    print('device: "%s"' % device)
+
     with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
+        G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
 
     os.makedirs(outdir, exist_ok=True)
 
@@ -119,22 +133,41 @@ def generate_images(
         if class_idx is not None:
             print ('warn: --class=lbl ignored when running on an unconditional network')
 
-    # Generate images.
-    for seed_idx, seed in enumerate(seeds):
-        print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
-        z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
+        # Generate images.
+        start_time = time.time()
+        images = []
+        for seed_idx, seed in enumerate(seeds):
+            print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
+            z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
 
-        # Construct an inverse rotation/translation matrix and pass to the generator.  The
-        # generator expects this matrix as an inverse to avoid potentially failing numerical
-        # operations in the network.
-        if hasattr(G.synthesis, 'input'):
-            m = make_transform(translate, rotate)
-            m = np.linalg.inv(m)
-            G.synthesis.input.transform.copy_(torch.from_numpy(m))
+            # Construct an inverse rotation/translation matrix and pass to the generator.  The
+            # generator expects this matrix as an inverse to avoid potentially failing numerical
+            # operations in the network.
+            if hasattr(G.synthesis, 'input'):
+                m = make_transform(translate, rotate)
+                m = np.linalg.inv(m)
+                G.synthesis.input.transform.copy_(torch.from_numpy(m))
 
-        img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
-        img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
-        PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/seed{seed:04d}.png')
+            if cuda_avail:
+                img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
+            else:
+                img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode, force_fp32=True)
+            img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
+            img = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB')
+            images.append(img)
+        print("total %s seconds, %sit/s, %ss/it" % (
+        (time.time() - start_time), len(images) / (time.time() - start_time), (time.time() - start_time) / len(images)))
+        w, h = images[0].size
+        w = int(w * scale)
+        h = int(h * scale)
+        rows = ceil(len(images) / cols)
+        width = cols * w
+        height = rows * h
+        canvas = PIL.Image.new('RGBA', (int(width), int(height)), 'white')
+        for i, img in enumerate(images):
+            img = img.resize((w, h), PIL.Image.ANTIALIAS)
+            canvas.paste(img, (int(w * (i % cols)), int(h * (i // cols))))
+        canvas.save(f'{outdir}/result.png')
 
 
 #----------------------------------------------------------------------------
