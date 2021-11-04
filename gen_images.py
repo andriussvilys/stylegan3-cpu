@@ -104,7 +104,7 @@ def generate_images(
 
     \b
     # Generate uncurated images with truncation using the MetFaces-U dataset
-    python gen_images.py --outdir=out --trunc=0.7 --seeds=600-605 \\
+    python gen_images.py --outdir=out --trunc=0.7 --seeds=600-605 --cols=5 \\
         --network=https://api.ngc.nvidia.com/v2/models/nvidia/research/stylegan3/versions/1/files/stylegan3-t-metfacesu-1024x1024.pkl
     """
 
