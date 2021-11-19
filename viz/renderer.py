@@ -19,7 +19,6 @@ from torch_utils.ops import upfirdn2d
 import legacy # pylint: disable=import-error
 
 #----------------------------------------------------------------------------
-
 class CapturedException(Exception):
     def __init__(self, msg=None):
         if msg is None:
@@ -115,28 +114,41 @@ def _apply_affine_transformation(x, mat, up=4, **filter_kwargs):
     return z, m
 
 #----------------------------------------------------------------------------
-
+cuda_avail = torch.cuda.is_available()
+if cuda_avail:
+    print('cuda is available.')
+    device = torch.device('cuda')
+    start_ev = torch.cuda.Event(enable_timing=True)
+    end_ev = torch.cuda.Event(enable_timing=True)
+else:
+    print('cuda is not available.')
+    device = torch.device('cpu')
+    start_ev = None
+    end_ev = None
+print('device: "%s"' % device)
 class Renderer:
     def __init__(self):
-        self._device        = torch.device('cuda')
+        self._device        = device
         self._pkl_data      = dict()    # {pkl: dict | CapturedException, ...}
         self._networks      = dict()    # {cache_key: torch.nn.Module, ...}
         self._pinned_bufs   = dict()    # {(shape, dtype): torch.Tensor, ...}
         self._cmaps         = dict()    # {name: torch.Tensor, ...}
         self._is_timing     = False
-        self._start_event   = torch.cuda.Event(enable_timing=True)
-        self._end_event     = torch.cuda.Event(enable_timing=True)
+        self._start_event   = start_ev
+        self._end_event     = end_ev
         self._net_layers    = dict()    # {cache_key: [dnnlib.EasyDict, ...], ...}
 
     def render(self, **args):
         self._is_timing = True
-        self._start_event.record(torch.cuda.current_stream(self._device))
+        if cuda_avail:
+            self._start_event.record(torch.cuda.current_stream(self._device))
         res = dnnlib.EasyDict()
         try:
             self._render_impl(res, **args)
         except:
             res.error = CapturedException()
-        self._end_event.record(torch.cuda.current_stream(self._device))
+        if cuda_avail:
+            self._end_event.record(torch.cuda.current_stream(self._device))
         if 'image' in res:
             res.image = self.to_cpu(res.image).numpy()
         if 'stats' in res:
@@ -144,8 +156,9 @@ class Renderer:
         if 'error' in res:
             res.error = str(res.error)
         if self._is_timing:
-            self._end_event.synchronize()
-            res.render_time = self._start_event.elapsed_time(self._end_event) * 1e-3
+            if cuda_avail:
+                self._end_event.synchronize()
+                res.render_time = self._start_event.elapsed_time(self._end_event) * 1e-3
             self._is_timing = False
         return res
 
@@ -196,7 +209,10 @@ class Renderer:
         key = (tuple(ref.shape), ref.dtype)
         buf = self._pinned_bufs.get(key, None)
         if buf is None:
-            buf = torch.empty(ref.shape, dtype=ref.dtype).pin_memory()
+            if cuda_avail:
+                buf = torch.empty(ref.shape, dtype=ref.dtype).pin_memory()
+            else:
+                buf = torch.empty(ref.shape, dtype=ref.dtype)
             self._pinned_bufs[key] = buf
         return buf
 
