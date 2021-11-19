@@ -3,13 +3,13 @@
 
 TODO
 * gen images (o)
-* gen video (...)
+* gen video (80%)
 * calc metrics (x)
 * avg spectra (x)
 * dataset (x)
 * train (x)
-* visualize (x)
-* latent space (x)
+* visualize (90%)
+* latent space (o)
 
 ## Alias-Free Generative Adversarial Networks (StyleGAN3)<br><sub>Official PyTorch implementation of the NeurIPS 2021 paper</sub>
 
