@@ -13,6 +13,8 @@ import os
 import numpy as np
 import torch
 import torch.fft
+import torch.utils.data
+import torch.nn.functional
 import scipy.ndimage
 import matplotlib.pyplot as plt
 import click
@@ -22,11 +24,12 @@ import dnnlib
 import legacy
 from training import dataset
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Setup an iterator for streaming images, in uint8 NCHW format, based on the
 # respective command line options.
 
-def stream_source_images(source, num, seed, device, data_loader_kwargs=None): # => num_images, image_size, image_iter
+def stream_source_images(source, num, seed, device, data_loader_kwargs=None):  # => num_images, image_size, image_iter
     ext = source.split('.')[-1].lower()
     if data_loader_kwargs is None:
         data_loader_kwargs = dict(pin_memory=True, num_workers=3, prefetch_factor=2)
@@ -36,14 +39,16 @@ def stream_source_images(source, num, seed, device, data_loader_kwargs=None): # 
             raise click.ClickException('--num is required when --source points to network pickle')
         with dnnlib.util.open_url(source) as f:
             G = legacy.load_network_pkl(f)['G_ema'].to(device)
-        def generate_image(seed):
-            rnd = np.random.RandomState(seed)
+
+        def generate_image(n_seed):
+            rnd = np.random.RandomState(n_seed)
             z = torch.from_numpy(rnd.randn(1, G.z_dim)).to(device)
             c = torch.zeros([1, G.c_dim], device=device)
             if G.c_dim > 0:
                 c[:, rnd.randint(G.c_dim)] = 1
             return (G(z=z, c=c) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
-        _ = generate_image(seed) # warm up
+
+        _ = generate_image(seed)  # warm up
         image_iter = (generate_image(seed + idx) for idx in range(num))
         return num, G.img_resolution, image_iter
 
@@ -58,7 +63,8 @@ def stream_source_images(source, num, seed, device, data_loader_kwargs=None): # 
     else:
         raise click.ClickException('--source must point to network pickle, dataset zip, or directory')
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Load average power spectrum from the specified .npz file and construct
 # the corresponding heatmap for visualization.
 
@@ -66,7 +72,7 @@ def construct_heatmap(npz_file, smooth):
     npz_data = np.load(npz_file)
     spectrum = npz_data['spectrum']
     image_size = npz_data['image_size']
-    hmap = np.log10(spectrum) * 10 # dB
+    hmap = np.log10(spectrum) * 10  # dB
     hmap = np.fft.fftshift(hmap)
     hmap = np.concatenate([hmap, hmap[:1, :]], axis=0)
     hmap = np.concatenate([hmap, hmap[:, :1]], axis=1)
@@ -75,7 +81,8 @@ def construct_heatmap(npz_file, smooth):
         hmap = scipy.ndimage.gaussian_filter(hmap, sigma=sigma, mode='nearest')
     return hmap, image_size
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @click.group()
 def main():
@@ -112,12 +119,14 @@ def main():
     python avg_spectra.py slices tmp/training-data.npz tmp/stylegan3-r.npz --save=tmp/slices.png --dpi=300
     """
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @main.command()
 @click.option('--source', help='Network pkl, dataset zip, or directory', metavar='[PKL|ZIP|DIR]', required=True)
 @click.option('--num', help='Number of images to process  [default: all]', metavar='INT', type=click.IntRange(min=1))
-@click.option('--seed', help='Random seed for selecting the images', metavar='INT', type=click.IntRange(min=0), default=0, show_default=True)
+@click.option('--seed', help='Random seed for selecting the images', metavar='INT', type=click.IntRange(min=0),
+              default=0, show_default=True)
 def stats(source, num, seed, device=torch.device('cuda')):
     """Calculate dataset mean and standard deviation needed by 'calc'."""
     torch.multiprocessing.set_start_method('spawn')
@@ -135,17 +144,22 @@ def stats(source, num, seed, device=torch.device('cuda')):
     std = (moments[2] - moments[1].square()).sqrt()
     print(f'--mean={mean:g} --std={std:g}')
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @main.command()
 @click.option('--source', help='Network pkl, dataset zip, or directory', metavar='[PKL|ZIP|DIR]', required=True)
 @click.option('--dest', help='Where to store the result', metavar='NPZ', required=True)
 @click.option('--mean', help='Dataset mean for whitening', metavar='FLOAT', type=float, required=True)
-@click.option('--std', help='Dataset standard deviation for whitening', metavar='FLOAT', type=click.FloatRange(min=0), required=True)
+@click.option('--std', help='Dataset standard deviation for whitening', metavar='FLOAT', type=click.FloatRange(min=0),
+              required=True)
 @click.option('--num', help='Number of images to process  [default: all]', metavar='INT', type=click.IntRange(min=1))
-@click.option('--seed', help='Random seed for selecting the images', metavar='INT', type=click.IntRange(min=0), default=0, show_default=True)
-@click.option('--beta', help='Shape parameter for the Kaiser window', metavar='FLOAT', type=click.FloatRange(min=0), default=8, show_default=True)
-@click.option('--interp', help='Frequency-domain interpolation factor', metavar='INT', type=click.IntRange(min=1), default=4, show_default=True)
+@click.option('--seed', help='Random seed for selecting the images', metavar='INT', type=click.IntRange(min=0),
+              default=0, show_default=True)
+@click.option('--beta', help='Shape parameter for the Kaiser window', metavar='FLOAT', type=click.FloatRange(min=0),
+              default=8, show_default=True)
+@click.option('--interp', help='Frequency-domain interpolation factor', metavar='INT', type=click.IntRange(min=1),
+              default=4, show_default=True)
 def calc(source, dest, mean, std, num, seed, beta, interp, device=torch.device('cuda')):
     """Calculate average power spectrum and store it in .npz file."""
     torch.multiprocessing.set_start_method('spawn')
@@ -163,7 +177,7 @@ def calc(source, dest, mean, std, num, seed, beta, interp, device=torch.device('
     for image in tqdm.tqdm(image_iter, total=num_images):
         image = (image.to(torch.float64) - mean) / std
         image = torch.nn.functional.pad(image * window, [0, padding, 0, padding])
-        spectrum += torch.fft.fftn(image, dim=[2,3]).abs().square().mean(dim=[0,1])
+        spectrum += torch.fft.fftn(image, dim=[2, 3]).abs().square().mean(dim=[0, 1])
     spectrum /= num_images
 
     # Save result.
@@ -171,13 +185,16 @@ def calc(source, dest, mean, std, num, seed, beta, interp, device=torch.device('
         os.makedirs(os.path.dirname(dest), exist_ok=True)
     np.savez(dest, spectrum=spectrum.cpu().numpy(), image_size=image_size)
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @main.command()
 @click.argument('npz-file', nargs=1)
 @click.option('--save', help='Save the plot and exit', metavar='[PNG|PDF|...]')
-@click.option('--dpi', help='Figure resolution', metavar='FLOAT', type=click.FloatRange(min=1), default=100, show_default=True)
-@click.option('--smooth', help='Amount of smoothing', metavar='FLOAT', type=click.FloatRange(min=0), default=1.25, show_default=True)
+@click.option('--dpi', help='Figure resolution', metavar='FLOAT', type=click.FloatRange(min=1), default=100,
+              show_default=True)
+@click.option('--smooth', help='Amount of smoothing', metavar='FLOAT', type=click.FloatRange(min=0), default=1.25,
+              show_default=True)
 def heatmap(npz_file, save, smooth, dpi):
     """Visualize 2D heatmap based on the given .npz file."""
     hmap, image_size = construct_heatmap(npz_file=npz_file, smooth=smooth)
@@ -196,7 +213,8 @@ def heatmap(npz_file, save, smooth, dpi):
     plt.contourf(freqs, freqs, hmap, levels=levels, extend='both', cmap='Blues')
     plt.gca().set_aspect('equal')
     plt.colorbar(ticks=levels)
-    plt.contour(freqs, freqs, hmap, levels=levels, extend='both', linestyles='solid', linewidths=1, colors='midnightblue', alpha=0.2)
+    plt.contour(freqs, freqs, hmap, levels=levels, extend='both', linestyles='solid', linewidths=1,
+                colors='midnightblue', alpha=0.2)
 
     # Display or save.
     if save is None:
@@ -206,13 +224,16 @@ def heatmap(npz_file, save, smooth, dpi):
             os.makedirs(os.path.dirname(save), exist_ok=True)
         plt.savefig(save)
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @main.command()
 @click.argument('npz-files', nargs=-1, required=True)
 @click.option('--save', help='Save the plot and exit', metavar='[PNG|PDF|...]')
-@click.option('--dpi', help='Figure resolution', metavar='FLOAT', type=click.FloatRange(min=1), default=100, show_default=True)
-@click.option('--smooth', help='Amount of smoothing', metavar='FLOAT', type=click.FloatRange(min=0), default=0, show_default=True)
+@click.option('--dpi', help='Figure resolution', metavar='FLOAT', type=click.FloatRange(min=1), default=100,
+              show_default=True)
+@click.option('--smooth', help='Amount of smoothing', metavar='FLOAT', type=click.FloatRange(min=0), default=0,
+              show_default=True)
 def slices(npz_files, save, dpi, smooth):
     """Visualize 1D slices based on the given .npz files."""
     cases = [dnnlib.EasyDict(npz_file=npz_file) for npz_file in npz_files]
@@ -268,9 +289,10 @@ def slices(npz_files, save, dpi, smooth):
             os.makedirs(os.path.dirname(save), exist_ok=True)
         plt.savefig(save)
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main() # pylint: disable=no-value-for-parameter
+    main()  # pylint: disable=no-value-for-parameter
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------

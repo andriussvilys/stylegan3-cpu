@@ -20,7 +20,8 @@ import torch
 
 import legacy
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 def num_range(s: str) -> List[int]:
     '''Accept either a comma separated list of numbers 'a,b,c' or a range 'a-c' and return as a list of ints.'''
@@ -28,11 +29,12 @@ def num_range(s: str) -> List[int]:
     range_re = re.compile(r'^(\d+)-(\d+)$')
     m = range_re.match(s)
     if m:
-        return list(range(int(m.group(1)), int(m.group(2))+1))
+        return list(range(int(m.group(1)), int(m.group(2)) + 1))
     vals = s.split(',')
     return [int(x) for x in vals]
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @click.command()
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
@@ -40,16 +42,17 @@ def num_range(s: str) -> List[int]:
 @click.option('--cols', 'col_seeds', type=num_range, help='Random seeds to use for image columns', required=True)
 @click.option('--styles', 'col_styles', type=num_range, help='Style layer range', default='0-6', show_default=True)
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
-@click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
+@click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const',
+              show_default=True)
 @click.option('--outdir', type=str, required=True)
 def generate_style_mix(
-    network_pkl: str,
-    row_seeds: List[int],
-    col_seeds: List[int],
-    col_styles: List[int],
-    truncation_psi: float,
-    noise_mode: str,
-    outdir: str
+        network_pkl: str,
+        row_seeds: List[int],
+        col_seeds: List[int],
+        col_styles: List[int],
+        truncation_psi: float,
+        noise_mode: str,
+        outdir: str
 ):
     """Generate images using pretrained network pickle.
 
@@ -62,7 +65,7 @@ def generate_style_mix(
     print('Loading networks from "%s"...' % network_pkl)
     device = torch.device('cuda')
     with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
+        G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
 
     os.makedirs(outdir, exist_ok=True)
 
@@ -90,8 +93,9 @@ def generate_style_mix(
 
     print('Saving images...')
     os.makedirs(outdir, exist_ok=True)
+    os.makedirs(f'{outdir}/stylemix', exist_ok=True)
     for (row_seed, col_seed), image in image_dict.items():
-        PIL.Image.fromarray(image, 'RGB').save(f'{outdir}/{row_seed}-{col_seed}.png')
+        PIL.Image.fromarray(image, 'RGB').save(f'{outdir}/stylemix/{row_seed}-{col_seed}.png')
 
     print('Saving image grid...')
     W = G.img_resolution
@@ -110,9 +114,9 @@ def generate_style_mix(
     canvas.save(f'{outdir}/grid.png')
 
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    generate_style_mix() # pylint: disable=no-value-for-parameter
+    generate_style_mix()  # pylint: disable=no-value-for-parameter
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------

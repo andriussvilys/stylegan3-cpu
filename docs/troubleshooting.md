@@ -1,13 +1,13 @@
 # Troubleshooting
 
-Our PyTorch code uses custom [CUDA extensions](https://pytorch.org/tutorials/advanced/cpp_extension.html) to speed up some of the network layers.  Getting these to run can sometimes be a hassle.
+Our PyTorch code uses custom [CUDA extensions](https://pytorch.org/tutorials/advanced/cpp_extension.html) to speed up some network layers.  Getting these to run can sometimes be a hassle.
 
 This page aims to give guidance on how to diagnose and fix run-time problems related to these extensions.
 
 ## Before you start
 
 1. Try Docker first!  Ensure you can successfully run our models using the recommended Docker image.  Follow the instructions in [README.md](/README.md) to get it running.
-2. Can't use Docker?  Read on..
+2. Can't use Docker?  Read on.
 
 ## Installing dependencies
 

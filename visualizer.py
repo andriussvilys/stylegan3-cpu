@@ -7,7 +7,6 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 import click
-import os
 
 import multiprocessing
 import numpy as np
@@ -27,35 +26,36 @@ from viz import capture_widget
 from viz import layer_widget
 from viz import equivariance_widget
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 class Visualizer(imgui_window.ImguiWindow):
     def __init__(self, capture_dir=None):
         super().__init__(title='GAN Visualizer', window_width=3840, window_height=2160)
 
         # Internals.
-        self._last_error_print  = None
-        self._async_renderer    = AsyncRenderer()
-        self._defer_rendering   = 0
-        self._tex_img           = None
-        self._tex_obj           = None
+        self._last_error_print = None
+        self._async_renderer = AsyncRenderer()
+        self._defer_rendering = 0
+        self._tex_img = None
+        self._tex_obj = None
 
         # Widget interface.
-        self.args               = dnnlib.EasyDict()
-        self.result             = dnnlib.EasyDict()
-        self.pane_w             = 0
-        self.label_w            = 0
-        self.button_w           = 0
+        self.args = dnnlib.EasyDict()
+        self.result = dnnlib.EasyDict()
+        self.pane_w = 0
+        self.label_w = 0
+        self.button_w = 0
 
         # Widgets.
-        self.pickle_widget      = pickle_widget.PickleWidget(self)
-        self.latent_widget      = latent_widget.LatentWidget(self)
-        self.stylemix_widget    = stylemix_widget.StyleMixingWidget(self)
+        self.pickle_widget = pickle_widget.PickleWidget(self)
+        self.latent_widget = latent_widget.LatentWidget(self)
+        self.stylemix_widget = stylemix_widget.StyleMixingWidget(self)
         self.trunc_noise_widget = trunc_noise_widget.TruncationNoiseWidget(self)
-        self.perf_widget        = performance_widget.PerformanceWidget(self)
-        self.capture_widget     = capture_widget.CaptureWidget(self)
-        self.layer_widget       = layer_widget.LayerWidget(self)
-        self.eq_widget          = equivariance_widget.EquivarianceWidget(self)
+        self.perf_widget = performance_widget.PerformanceWidget(self)
+        self.capture_widget = capture_widget.CaptureWidget(self)
+        self.layer_widget = layer_widget.LayerWidget(self)
+        self.eq_widget = equivariance_widget.EquivarianceWidget(self)
 
         if capture_dir is not None:
             self.capture_widget.path = capture_dir
@@ -63,7 +63,7 @@ class Visualizer(imgui_window.ImguiWindow):
         # Initialize window.
         self.set_position(0, 0)
         self._adjust_font_size()
-        self.skip_frame() # Layout may change after first frame.
+        self.skip_frame()  # Layout may change after first frame.
 
     def close(self):
         super().close()
@@ -101,7 +101,7 @@ class Visualizer(imgui_window.ImguiWindow):
         old = self.font_size
         self.set_font_size(min(self.content_width / 120, self.content_height / 60))
         if self.font_size != old:
-            self.skip_frame() # Layout changed.
+            self.skip_frame()  # Layout changed.
 
     def draw_frame(self):
         self.begin_frame()
@@ -111,14 +111,16 @@ class Visualizer(imgui_window.ImguiWindow):
         self.label_w = round(self.font_size * 4.5)
 
         # Detect mouse dragging in the result area.
-        dragging, dx, dy = imgui_utils.drag_hidden_window('##result_area', x=self.pane_w, y=0, width=self.content_width-self.pane_w, height=self.content_height)
+        dragging, dx, dy = imgui_utils.drag_hidden_window('##result_area', x=self.pane_w, y=0,
+                                                          width=self.content_width - self.pane_w,
+                                                          height=self.content_height)
         if dragging:
             self.latent_widget.drag(dx, dy)
 
         # Begin control pane.
         imgui.set_next_window_position(0, 0)
         imgui.set_next_window_size(self.pane_w, self.content_height)
-        imgui.begin('##control_pane', closable=False, flags=(imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE))
+        imgui.begin('##control_pane', closable=False)
 
         # Widgets.
         expanded, _visible = imgui_utils.collapsing_header('Network & latent', default=True)
@@ -165,7 +167,8 @@ class Visualizer(imgui_window.ImguiWindow):
             if 'message' not in self.result:
                 self.result.message = str(self.result.error)
         if 'message' in self.result:
-            tex = text_utils.get_texture(self.result.message, size=self.font_size, max_width=max_w, max_height=max_h, outline=2)
+            tex = text_utils.get_texture(self.result.message, size=self.font_size, max_width=max_w, max_height=max_h,
+                                         outline=2)
             tex.draw(pos=pos, align=0.5, rint=True, color=1)
 
         # End frame.
@@ -173,19 +176,20 @@ class Visualizer(imgui_window.ImguiWindow):
         imgui.end()
         self.end_frame()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 class AsyncRenderer:
     def __init__(self):
-        self._closed        = False
-        self._is_async      = False
-        self._cur_args      = None
-        self._cur_result    = None
-        self._cur_stamp     = 0
-        self._renderer_obj  = None
-        self._args_queue    = None
-        self._result_queue  = None
-        self._process       = None
+        self._closed = False
+        self._is_async = False
+        self._cur_args = None
+        self._cur_result = None
+        self._cur_stamp = 0
+        self._renderer_obj = None
+        self._args_queue = None
+        self._result_queue = None
+        self._process = None
 
     def close(self):
         self._closed = True
@@ -220,7 +224,8 @@ class AsyncRenderer:
                 multiprocessing.set_start_method('spawn')
             except RuntimeError:
                 pass
-            self._process = multiprocessing.Process(target=self._process_fn, args=(self._args_queue, self._result_queue), daemon=True)
+            self._process = multiprocessing.Process(target=self._process_fn,
+                                                    args=(self._args_queue, self._result_queue), daemon=True)
             self._process.start()
         self._args_queue.put([args, self._cur_stamp])
 
@@ -261,16 +266,17 @@ class AsyncRenderer:
                 cur_args = args
                 cur_stamp = stamp
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @click.command()
 @click.argument('pkls', metavar='PATH', nargs=-1)
 @click.option('--capture-dir', help='Where to save screenshot captures', metavar='PATH', default=None)
 @click.option('--browse-dir', help='Specify model path for the \'Browse...\' button', metavar='PATH')
 def main(
-    pkls,
-    capture_dir,
-    browse_dir
+        pkls,
+        capture_dir,
+        browse_dir
 ):
     """Interactive model visualizer.
 
@@ -326,9 +332,10 @@ def main(
         viz.draw_frame()
     viz.close()
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
